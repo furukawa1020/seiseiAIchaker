@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import json
 from typing import List, Optional
@@ -23,6 +24,19 @@ app = FastAPI(
     title="RefSys",
     description="正確な参考文献・引用テンプレ自動生成＋実在性/既読検証システム",
     version="0.1.0"
+)
+
+# CORS設定（Next.jsフロントエンドからのアクセスを許可）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Next.js開発サーバー
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",  # FastAPI自身
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # GET, POST, PUT, DELETE等すべて許可
+    allow_headers=["*"],  # すべてのヘッダーを許可
 )
 
 # テンプレートとスタティックファイル
@@ -119,7 +133,85 @@ async def work_detail(request: Request, work_id: str):
     )
 
 
-@app.post("/works/import")
+# ============================================
+# JSON API エンドポイント（Next.jsフロントエンド用）
+# ============================================
+
+@app.get("/api/works")
+async def api_list_works(limit: Optional[int] = None):
+    """文献リスト（JSON）"""
+    works = await WorkDAO.list_all(limit=limit)
+    return works
+
+
+@app.get("/api/works/{work_id}")
+async def api_get_work(work_id: str):
+    """文献詳細（JSON）"""
+    work = await WorkDAO.get(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="Work not found")
+    return work
+
+
+@app.get("/api/works/{work_id}/checks")
+async def api_get_checks(work_id: str):
+    """検証結果取得（JSON）"""
+    checks = await CheckDAO.get_by_work(work_id)
+    return checks
+
+
+@app.get("/api/works/{work_id}/cards")
+async def api_get_cards(work_id: str):
+    """引用カード取得（JSON）"""
+    cards = await ClaimCardDAO.get_by_work(work_id)
+    return cards
+
+
+@app.get("/api/works/{work_id}/reading-score")
+async def api_get_reading_score(work_id: str):
+    """既読スコア取得（JSON）"""
+    evidences = await ReadEvidenceDAO.get_by_work(work_id)
+    cards = await ClaimCardDAO.get_by_work(work_id)
+    
+    scorer = ReadingScorer()
+    read_evidences = [
+        ReadingEvidence(
+            work_id=e['work_id'],
+            pdf_path=e.get('pdf_path', ''),
+            page=e.get('page', 0),
+            dwell_secs=e.get('dwell_secs', 0),
+            coverage=e.get('coverage', 0.0)
+        )
+        for e in evidences
+    ]
+    
+    claim_cards = [
+        ClaimCard(
+            work_id=c['work_id'],
+            claim_text=c['claim_text'],
+            context=c.get('context', ''),
+            page_numbers=c.get('page_numbers', '')
+        )
+        for c in cards
+    ]
+    
+    total_pages = max([e.get('page', 0) for e in evidences], default=0) + 1
+    
+    score_data = scorer.calculate_score(
+        evidences=read_evidences,
+        total_pages=total_pages,
+        cards=claim_cards
+    ) if evidences or cards else {
+        'score': 0,
+        'card_count': len(cards),
+        'evidence_count': len(evidences),
+        'passed': False
+    }
+    
+    return score_data
+
+
+@app.post("/api/works/import")
 async def import_works(
     file: Optional[UploadFile] = File(None),
     json_data: Optional[str] = Form(None)
@@ -193,6 +285,152 @@ async def verify_and_save(work_id: str, work_data: dict):
     except Exception as e:
         print(f"Verification error for {work_id}: {e}")
 
+
+@app.post("/api/works/{work_id}/verify")
+async def api_verify_work(work_id: str):
+    """文献の実在性検証（JSON）"""
+    work = await WorkDAO.get(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="Work not found")
+    
+    # CSL-JSONを復元
+    csl_data = json.loads(work['raw_csl_json'])
+    
+    # 検証実行
+    results = await verify_work(csl_data)
+    
+    # 保存
+    for kind, result in results.items():
+        await CheckDAO.create(
+            work_id=work_id,
+            kind=result.kind,
+            status=result.status,
+            detail=result.detail,
+            http_code=result.http_code
+        )
+    
+    return {
+        "work_id": work_id,
+        "results": {k: v.to_dict() for k, v in results.items()}
+    }
+
+
+@app.post("/api/works/{work_id}/cards")
+async def api_create_claim_card(
+    work_id: str,
+    claim_text: str = Form(...),
+    context: str = Form(...),
+    page_numbers: Optional[str] = Form(None)
+):
+    """引用カード作成（JSON）"""
+    work = await WorkDAO.get(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="Work not found")
+    
+    card_id = await ClaimCardDAO.create(
+        work_id=work_id,
+        claim_text=claim_text,
+        context=context,
+        page_numbers=page_numbers
+    )
+    
+    card = await ClaimCardDAO.get(card_id)
+    return card
+
+
+@app.post("/api/works/{work_id}/reading-evidence")
+async def api_submit_reading_evidence(
+    work_id: str,
+    page_numbers: str = Form(...),
+    notes: Optional[str] = Form(None)
+):
+    """既読証跡提出（JSON）"""
+    work = await WorkDAO.get(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="Work not found")
+    
+    # ページ番号をパース
+    pages = []
+    for part in page_numbers.split(','):
+        part = part.strip()
+        if '-' in part:
+            start, end = map(int, part.split('-'))
+            pages.extend(range(start, end + 1))
+        else:
+            pages.append(int(part))
+    
+    # 各ページの証跡を記録
+    evidence_ids = []
+    for page in pages:
+        evidence_id = await ReadEvidenceDAO.create(
+            work_id=work_id,
+            pdf_path='',  # オプション
+            page=page,
+            dwell_secs=60,  # デフォルト
+            coverage=0.5  # デフォルト
+        )
+        evidence_ids.append(evidence_id)
+    
+    return {
+        "work_id": work_id,
+        "pages": pages,
+        "evidence_count": len(evidence_ids)
+    }
+
+
+@app.get("/api/works/{work_id}/cite")
+async def api_get_citation(work_id: str, format: str = 'apa'):
+    """引用テキスト生成（JSON）"""
+    work = await WorkDAO.get(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="Work not found")
+    
+    csl_data = json.loads(work['raw_csl_json'])
+    
+    formatter = ReferenceFormatter()
+    if format == 'apa':
+        citation = formatter.format_apa(csl_data)
+    elif format == 'ieee':
+        citation = formatter.format_ieee(csl_data)
+    elif format == 'bibtex':
+        citation = export_to_bibtex([csl_data])
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format")
+    
+    return {"citation": citation}
+
+
+@app.post("/api/export/bibliography")
+async def api_export_bibliography(
+    work_ids: List[str],
+    format: str = 'apa'
+):
+    """参考文献リストエクスポート（JSON）"""
+    works_data = []
+    for work_id in work_ids:
+        work = await WorkDAO.get(work_id)
+        if work:
+            csl_data = json.loads(work['raw_csl_json'])
+            works_data.append(csl_data)
+    
+    formatter = ReferenceFormatter()
+    bibliography = []
+    
+    for csl_data in works_data:
+        if format == 'apa':
+            citation = formatter.format_apa(csl_data)
+        elif format == 'ieee':
+            citation = formatter.format_ieee(csl_data)
+        else:
+            citation = str(csl_data)
+        bibliography.append(citation)
+    
+    return {"bibliography": "\n\n".join(bibliography)}
+
+
+# ============================================
+# 以下、既存のHTMLエンドポイント
+# ============================================
 
 @app.post("/works/{work_id}/verify")
 async def verify_work_endpoint(work_id: str):
