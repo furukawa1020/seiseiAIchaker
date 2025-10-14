@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, FileJson, AlertCircle } from 'lucide-react'
+import { Upload, FileJson, FileText, AlertCircle } from 'lucide-react'
 import { workApi } from '@/lib/api'
 
 interface ImportSectionProps {
@@ -13,6 +13,7 @@ export function ImportSection({ onImportSuccess }: ImportSectionProps) {
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [importMode, setImportMode] = useState<'json' | 'pdf'>('pdf')
 
   const onDrop = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return
@@ -23,11 +24,18 @@ export function ImportSection({ onImportSuccess }: ImportSectionProps) {
     setSuccess(null)
 
     try {
-      const text = await file.text()
-      const json = JSON.parse(text)
-      const result = await workApi.importWorks(json)
+      if (file.name.endsWith('.pdf')) {
+        // PDFアップロード
+        const result = await workApi.uploadPdf(file)
+        setSuccess(`✓ PDFから文献情報を抽出しました: ${result.title}`)
+      } else {
+        // JSON インポート
+        const text = await file.text()
+        const json = JSON.parse(text)
+        const result = await workApi.importWorks(json)
+        setSuccess(`✓ ${result.imported || 0}件の文献をインポートしました`)
+      }
       
-      setSuccess(`✓ ${result.imported || 0}件の文献をインポートしました`)
       onImportSuccess?.()
     } catch (err: any) {
       setError(err.message || 'インポートに失敗しました')
@@ -38,17 +46,43 @@ export function ImportSection({ onImportSuccess }: ImportSectionProps) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'application/json': ['.json'],
-    },
+    accept: importMode === 'pdf' 
+      ? { 'application/pdf': ['.pdf'] }
+      : { 'application/json': ['.json'] },
     multiple: false,
   })
 
   return (
     <div className="card">
       <div className="flex items-center gap-2 mb-4">
-        <FileJson className="w-6 h-6 text-blue-600" />
+        <Upload className="w-6 h-6 text-blue-600" />
         <h2 className="text-2xl font-bold text-gray-900">文献をインポート</h2>
+      </div>
+
+      {/* モード切り替えタブ */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setImportMode('pdf')}
+          className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+            importMode === 'pdf'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          <FileText className="w-4 h-4 inline mr-2" />
+          PDF アップロード
+        </button>
+        <button
+          onClick={() => setImportMode('json')}
+          className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+            importMode === 'json'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          <FileJson className="w-4 h-4 inline mr-2" />
+          JSON インポート
+        </button>
       </div>
 
       <div
@@ -70,7 +104,9 @@ export function ImportSection({ onImportSuccess }: ImportSectionProps) {
         }`} />
         
         {importing ? (
-          <p className="text-lg text-gray-600">インポート中...</p>
+          <p className="text-lg text-gray-600">
+            {importMode === 'pdf' ? 'PDF処理中...' : 'インポート中...'}
+          </p>
         ) : isDragActive ? (
           <p className="text-lg text-blue-600 font-medium">
             ここにドロップしてください
@@ -78,11 +114,19 @@ export function ImportSection({ onImportSuccess }: ImportSectionProps) {
         ) : (
           <>
             <p className="text-lg text-gray-700 mb-2">
-              CSL-JSON ファイルをドラッグ＆ドロップ
+              {importMode === 'pdf' 
+                ? '📄 PDFファイルをドラッグ＆ドロップ'
+                : 'CSL-JSON ファイルをドラッグ＆ドロップ'
+              }
             </p>
             <p className="text-sm text-gray-500">
               または、クリックしてファイルを選択
             </p>
+            {importMode === 'pdf' && (
+              <p className="text-xs text-gray-400 mt-2">
+                💡 PDFからタイトル・著者・発行年を自動抽出します
+              </p>
+            )}
           </>
         )}
       </div>
