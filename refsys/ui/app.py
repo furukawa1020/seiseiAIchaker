@@ -220,98 +220,109 @@ async def upload_pdf(file: UploadFile = File(...)):
     from datetime import datetime
     import tempfile
     import os
-    
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="PDFファイルのみアップロード可能です")
-    
-    # 一時ファイルに保存
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-        content = await file.read()
-        tmp_file.write(content)
-        tmp_file_path = tmp_file.name
+    import traceback
     
     try:
-        # PDFを開く
-        doc = fitz.open(tmp_file_path)
-        metadata = doc.metadata
+        if not file.filename.endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="PDFファイルのみアップロード可能です")
         
-        # メタデータから情報を抽出
-        title = metadata.get('title', '') or file.filename.replace('.pdf', '')
-        author_str = metadata.get('author', '')
+        # 一時ファイルに保存
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
         
-        # 著者情報をパース
-        authors = []
-        if author_str:
-            # カンマ区切りまたはセミコロン区切りを想定
-            author_parts = author_str.replace(';', ',').split(',')
-            for part in author_parts:
-                part = part.strip()
-                if part:
-                    # "Family, Given" or "Given Family" 形式に対応
-                    if ' ' in part:
-                        names = part.split()
-                        authors.append({
-                            'family': names[-1],
-                            'given': ' '.join(names[:-1])
-                        })
-                    else:
-                        authors.append({'family': part, 'given': ''})
-        
-        if not authors:
-            authors = [{'family': 'Unknown', 'given': ''}]
-        
-        # 発行年を抽出（メタデータまたは作成日から）
-        issued_year = None
-        if metadata.get('creationDate'):
-            try:
-                # "D:20231201..." 形式をパース
-                date_str = metadata['creationDate']
-                if date_str.startswith('D:'):
-                    year_str = date_str[2:6]
-                    issued_year = int(year_str)
-            except:
-                pass
-        
-        if not issued_year:
-            issued_year = datetime.now().year
-        
-        # ページ数を取得（docを閉じる前に）
-        page_count = len(doc)
-        
-        # CSL-JSON形式で作成
-        csl_item = CSLItem(
-            id=f"pdf_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            type='article',  # デフォルトはarticle
-            title=title,
-            author=authors,
-            issued={'date-parts': [[issued_year]]},
-            abstract=metadata.get('subject', '')
-        )
-        
-        doc.close()
-        
-        # 位置づけ分析
-        analyzer = PositionAnalyzer()
-        position = analyzer.analyze_csl(csl_item)
-        
-        # データベースに保存
-        work_id = await WorkDAO.create(csl_item, position)
-        
-        return {
-            'work_id': work_id,
-            'title': title,
-            'authors': authors,
-            'year': issued_year,
-            'pages': page_count,
-            'message': 'PDFから文献情報を抽出してインポートしました'
-        }
-        
+        try:
+            # PDFを開く
+            doc = fitz.open(tmp_file_path)
+            metadata = doc.metadata
+            
+            # メタデータから情報を抽出
+            title = metadata.get('title', '') or file.filename.replace('.pdf', '')
+            author_str = metadata.get('author', '')
+            
+            # 著者情報をパース
+            authors = []
+            if author_str:
+                # カンマ区切りまたはセミコロン区切りを想定
+                author_parts = author_str.replace(';', ',').split(',')
+                for part in author_parts:
+                    part = part.strip()
+                    if part:
+                        # "Family, Given" or "Given Family" 形式に対応
+                        if ' ' in part:
+                            names = part.split()
+                            authors.append({
+                                'family': names[-1],
+                                'given': ' '.join(names[:-1])
+                            })
+                        else:
+                            authors.append({'family': part, 'given': ''})
+            
+            if not authors:
+                authors = [{'family': 'Unknown', 'given': ''}]
+            
+            # 発行年を抽出（メタデータまたは作成日から）
+            issued_year = None
+            if metadata.get('creationDate'):
+                try:
+                    # "D:20231201..." 形式をパース
+                    date_str = metadata['creationDate']
+                    if date_str.startswith('D:'):
+                        year_str = date_str[2:6]
+                        issued_year = int(year_str)
+                except:
+                    pass
+            
+            if not issued_year:
+                issued_year = datetime.now().year
+            
+            # ページ数を取得（docを閉じる前に）
+            page_count = len(doc)
+            
+            # CSL-JSON形式で作成
+            csl_item = CSLItem(
+                id=f"pdf_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                type='article',  # デフォルトはarticle
+                title=title,
+                author=authors,
+                issued={'date-parts': [[issued_year]]},
+                abstract=metadata.get('subject', '')
+            )
+            
+            doc.close()
+            
+            # 位置づけ分析
+            analyzer = PositionAnalyzer()
+            position = analyzer.analyze_csl(csl_item)
+            
+            # データベースに保存
+            work_id = await WorkDAO.create(csl_item, position)
+            
+            return {
+                'work_id': work_id,
+                'title': title,
+                'authors': authors,
+                'year': issued_year,
+                'pages': page_count,
+                'message': 'PDFから文献情報を抽出してインポートしました'
+            }
+            
+        except Exception as e:
+            error_detail = f"PDF処理エラー: {str(e)}\n{traceback.format_exc()}"
+            print(error_detail)  # ログに出力
+            raise HTTPException(status_code=500, detail=error_detail)
+        finally:
+            # 一時ファイルを削除
+            if os.path.exists(tmp_file_path):
+                os.remove(tmp_file_path)
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF処理エラー: {str(e)}")
-    finally:
-        # 一時ファイルを削除
-        if os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
+        error_detail = f"予期しないエラー: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)  # ログに出力
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.post("/api/works/import")
