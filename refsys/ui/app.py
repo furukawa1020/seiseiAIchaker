@@ -517,17 +517,18 @@ async def api_get_citation(work_id: str, format: str = 'apa'):
     if not work:
         raise HTTPException(status_code=404, detail="Work not found")
     
-    csl_data = json.loads(work['raw_csl_json'])
+    csl_json = json.loads(work['raw_csl_json'])
     
     formatter = ReferenceFormatter()
-    if format == 'apa':
-        citation = formatter.format_apa(csl_data)
-    elif format == 'ieee':
-        citation = formatter.format_ieee(csl_data)
-    elif format == 'bibtex':
-        citation = export_to_bibtex([csl_data])
+    
+    if format == 'bibtex':
+        citation = export_to_bibtex([csl_json])
     else:
-        raise HTTPException(status_code=400, detail="Invalid format")
+        # CSLItemオブジェクトに変換
+        from refsys.ingest import parse_csl_from_dict
+        csl_item = parse_csl_from_dict(csl_json)
+        # format_referenceメソッドを使用（APA形式）
+        citation = formatter.format_reference(csl_item)
     
     return {"citation": citation}
 
@@ -538,26 +539,25 @@ async def api_export_bibliography(
     format: str = 'apa'
 ):
     """参考文献リストエクスポート（JSON）"""
-    works_data = []
+    from refsys.ingest import parse_csl_from_dict
+    
+    csl_items = []
     for work_id in work_ids:
         work = await WorkDAO.get(work_id)
         if work:
-            csl_data = json.loads(work['raw_csl_json'])
-            works_data.append(csl_data)
+            csl_json = json.loads(work['raw_csl_json'])
+            csl_item = parse_csl_from_dict(csl_json)
+            csl_items.append(csl_item)
     
     formatter = ReferenceFormatter()
-    bibliography = []
     
-    for csl_data in works_data:
-        if format == 'apa':
-            citation = formatter.format_apa(csl_data)
-        elif format == 'ieee':
-            citation = formatter.format_ieee(csl_data)
-        else:
-            citation = str(csl_data)
-        bibliography.append(citation)
+    if format == 'bibtex':
+        bibliography = export_to_bibtex([item.to_dict() for item in csl_items])
+    else:
+        # format_bibliographyメソッドを使用（APA形式）
+        bibliography = formatter.format_bibliography(csl_items)
     
-    return {"bibliography": "\n\n".join(bibliography)}
+    return {"bibliography": bibliography}
 
 
 # ============================================
