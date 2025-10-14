@@ -280,24 +280,34 @@ async def upload_pdf(file: UploadFile = File(...)):
             # ページ数を取得（docを閉じる前に）
             page_count = len(doc)
             
-            # CSL-JSON形式で作成
+            doc.close()
+            
+            # 位置づけ分析（CSLItemをdict形式に変換）
+            analyzer = PositionAnalyzer()
+            work_dict = {
+                'id': f"pdf_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                'type': 'article',
+                'title': title,
+                'author': authors,
+                'issued': {'date-parts': [[issued_year]]},
+                'abstract': metadata.get('subject', '')
+            }
+            position = await analyzer.analyze_work(work_dict)
+            
+            # CSL-JSON形式で作成（位置づけ情報を含む）
             csl_item = CSLItem(
-                id=f"pdf_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                type='article',  # デフォルトはarticle
+                id=work_dict['id'],
+                type='article',
                 title=title,
                 author=authors,
                 issued={'date-parts': [[issued_year]]},
-                abstract=metadata.get('subject', '')
+                abstract=metadata.get('subject', ''),
+                peer_reviewed=position.peer_reviewed,
+                consensus_score=position.consensus_score
             )
             
-            doc.close()
-            
-            # 位置づけ分析
-            analyzer = PositionAnalyzer()
-            position = analyzer.analyze_csl(csl_item)
-            
             # データベースに保存
-            work_id = await WorkDAO.create(csl_item, position)
+            work_id = await WorkDAO.create(csl_item)
             
             return {
                 'work_id': work_id,
