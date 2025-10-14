@@ -275,6 +275,9 @@ async def upload_pdf(file: UploadFile = File(...)):
         if not issued_year:
             issued_year = datetime.now().year
         
+        # ページ数を取得（docを閉じる前に）
+        page_count = len(doc)
+        
         # CSL-JSON形式で作成
         csl_item = CSLItem(
             id=f"pdf_{datetime.now().strftime('%Y%m%d%H%M%S')}",
@@ -282,8 +285,7 @@ async def upload_pdf(file: UploadFile = File(...)):
             title=title,
             author=authors,
             issued={'date-parts': [[issued_year]]},
-            abstract=metadata.get('subject', ''),
-            page_count=len(doc)
+            abstract=metadata.get('subject', '')
         )
         
         doc.close()
@@ -300,7 +302,7 @@ async def upload_pdf(file: UploadFile = File(...)):
             'title': title,
             'authors': authors,
             'year': issued_year,
-            'pages': len(doc),
+            'pages': page_count,
             'message': 'PDFから文献情報を抽出してインポートしました'
         }
         
