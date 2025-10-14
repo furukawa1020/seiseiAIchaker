@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}文献リスト - RefSys{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📚 文献リスト</h2>
+    
+    {% if works %}
+    <p>全 {{ works|length }} 件</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>タイトル</th>
+                <th>著者</th>
+                <th>年</th>
+                <th>タイプ</th>
+                <th>査読</th>
+                <th>合意度</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for work in works %}
+            <tr>
+                <td><code>{{ work.id[:8] }}</code></td>
+                <td><a href="/works/{{ work.id }}">{{ work.title[:60] }}{% if work.title|length > 60 %}...{% endif %}</a></td>
+                <td>{{ work.authors|join(', ')[:40] }}{% if work.authors|join(', ')|length > 40 %}...{% endif %}</td>
+                <td>{{ work.issued_year or '-' }}</td>
+                <td>{{ work.type }}</td>
+                <td>
+                    {% if work.peer_reviewed == 1 %}
+                    <span class="badge badge-peer-reviewed">✓</span>
+                    {% elif work.peer_reviewed == 0 %}
+                    <span class="badge badge-not-peer-reviewed">✗</span>
+                    {% else %}
+                    <span class="badge">?</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if work.consensus_score %}
+                    <span class="badge" style="background: 
+                        {% if work.consensus_score >= 80 %}#27ae60
+                        {% elif work.consensus_score >= 65 %}#2ecc71
+                        {% elif work.consensus_score >= 50 %}#f39c12
+                        {% else %}#e74c3c{% endif %}; color: white;">
+                        {{ work.consensus_score }}
+                    </span>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/works/{{ work.id }}" class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;">詳細</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="alert alert-info">文献が登録されていません。</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <a href="/" class="btn">← ホームに戻る</a>
+</div>
+{% endblock %}

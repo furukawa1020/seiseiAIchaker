@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}RefSys - ホーム{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>📥 文献のインポート</h2>
+    <p>CSL-JSON形式のファイルをアップロードするか、JSONデータを直接入力してください。</p>
+    
+    <form action="/works/import" method="post" enctype="multipart/form-data" onsubmit="return handleImport(event)">
+        <label for="file">ファイルアップロード (CSL-JSON):</label>
+        <input type="file" name="file" id="file" accept=".json">
+        
+        <label for="json_data">または、JSONを直接入力:</label>
+        <textarea name="json_data" id="json_data" placeholder='{"title": "...", "author": [...], "DOI": "..."}'></textarea>
+        
+        <button type="submit" class="btn">インポート</button>
+    </form>
+    
+    <div id="import-result"></div>
+</div>
+
+<div class="card">
+    <h2>📚 最近の文献</h2>
+    {% if works %}
+    <table>
+        <thead>
+            <tr>
+                <th>タイトル</th>
+                <th>著者</th>
+                <th>年</th>
+                <th>査読</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for work in works %}
+            <tr>
+                <td><a href="/works/{{ work.id }}">{{ work.title }}</a></td>
+                <td>{{ work.authors|join(', ') }}</td>
+                <td>{{ work.issued_year or '-' }}</td>
+                <td>
+                    {% if work.peer_reviewed == 1 %}
+                    <span class="badge badge-peer-reviewed">✓ 査読あり</span>
+                    {% elif work.peer_reviewed == 0 %}
+                    <span class="badge badge-not-peer-reviewed">査読なし</span>
+                    {% else %}
+                    <span class="badge">不明</span>
+                    {% endif %}
+                    
+                    {% if work.retracted %}
+                    <span class="badge badge-retracted">⚠ 撤回</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/works/{{ work.id }}" class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;">詳細</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="alert alert-info">まだ文献が登録されていません。上記のフォームからインポートしてください。</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>🚀 クイックスタート</h2>
+    <ol>
+        <li><strong>文献をインポート</strong>: CSL-JSON形式のファイルまたはデータを上記フォームで投入</li>
+        <li><strong>実在性検証</strong>: 文献詳細ページで「検証実行」をクリック</li>
+        <li><strong>PDF読了記録</strong>: PDFを読みながらページ滞在とハイライトを記録</li>
+        <li><strong>引用文脈カード作成</strong>: 主張と証拠を関連付け</li>
+        <li><strong>参考文献出力</strong>: APA/IEEE形式でエクスポート</li>
+    </ol>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function handleImport(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    const resultDiv = document.getElementById('import-result');
+    
+    resultDiv.innerHTML = '<p class="alert alert-info">インポート中...</p>';
+    
+    try {
+        const response = await fetch('/works/import', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    ✅ ${result.imported}件の文献をインポートしました。
+                    ${result.duplicates > 0 ? `(${result.duplicates}件の重複を除外)` : ''}
+                </div>
+            `;
+            
+            // フォームリセット
+            form.reset();
+            
+            // ページをリロード（新しい文献を表示）
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー: ${result.detail}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー: ${error.message}</div>`;
+    }
+    
+    return false;
+}
+</script>
+{% endblock %}

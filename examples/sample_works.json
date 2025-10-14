@@ -1,0 +1,73 @@
+[
+  {
+    "id": "lazarus1984",
+    "type": "article-journal",
+    "title": "On the relationship between emotion and cognition",
+    "author": [
+      {
+        "family": "Lazarus",
+        "given": "Richard S."
+      }
+    ],
+    "issued": {
+      "date-parts": [[1984]]
+    },
+    "container-title": "American Psychologist",
+    "volume": "39",
+    "issue": "2",
+    "page": "124-129",
+    "DOI": "10.1037/0003-066X.39.2.124"
+  },
+  {
+    "id": "lecun2015",
+    "type": "article-journal",
+    "title": "Deep learning",
+    "author": [
+      {
+        "family": "LeCun",
+        "given": "Yann"
+      },
+      {
+        "family": "Bengio",
+        "given": "Yoshua"
+      },
+      {
+        "family": "Hinton",
+        "given": "Geoffrey"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2015]]
+    },
+    "container-title": "Nature",
+    "volume": "521",
+    "issue": "7553",
+    "page": "436-444",
+    "DOI": "10.1038/nature14539"
+  },
+  {
+    "id": "vaswani2017",
+    "type": "paper-conference",
+    "title": "Attention is all you need",
+    "author": [
+      {
+        "family": "Vaswani",
+        "given": "Ashish"
+      },
+      {
+        "family": "Shazeer",
+        "given": "Noam"
+      },
+      {
+        "family": "Parmar",
+        "given": "Niki"
+      }
+    ],
+    "issued": {
+      "date-parts": [[2017]]
+    },
+    "container-title": "Advances in Neural Information Processing Systems",
+    "volume": "30",
+    "page": "5998-6008"
+  }
+]

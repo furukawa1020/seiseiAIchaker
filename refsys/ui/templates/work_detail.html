@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}{{ work.title }} - RefSys{% endblock %}
+
+{% block content %}
+<div class="card">
+    <a href="/works" class="btn btn-secondary">← 文献リストに戻る</a>
+</div>
+
+<div class="card">
+    <h2>{{ work.title }}</h2>
+    
+    <p><strong>タイプ:</strong> {{ work.type }}</p>
+    
+    {% if work.authors %}
+    <p><strong>著者:</strong> 
+        {% for author in work.authors %}
+        {{ author.given }} {{ author.family }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+    </p>
+    {% endif %}
+    
+    {% if work.issued_year %}
+    <p><strong>発行年:</strong> {{ work.issued_year }}</p>
+    {% endif %}
+    
+    {% if work.container_title %}
+    <p><strong>掲載誌:</strong> {{ work.container_title }}</p>
+    {% endif %}
+    
+    {% if work.doi %}
+    <p><strong>DOI:</strong> <a href="https://doi.org/{{ work.doi }}" target="_blank">{{ work.doi }}</a></p>
+    {% endif %}
+    
+    {% if work.url %}
+    <p><strong>URL:</strong> <a href="{{ work.url }}" target="_blank">{{ work.url }}</a></p>
+    {% endif %}
+    
+    <div style="margin-top: 20px;">
+        {% if work.peer_reviewed == 1 %}
+        <span class="badge badge-peer-reviewed">✓ 査読あり</span>
+        {% elif work.peer_reviewed == 0 %}
+        <span class="badge badge-not-peer-reviewed">査読なし</span>
+        {% endif %}
+        
+        {% if work.retracted %}
+        <span class="badge badge-retracted">⚠ 撤回済み</span>
+        {% endif %}
+        
+        {% if work.consensus_score %}
+        <span class="badge" style="background: #3498db; color: white;">
+            合意度: {{ work.consensus_score }}/100
+        </span>
+        {% endif %}
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <button onclick="verifyWork('{{ work.id }}')" class="btn">🔍 実在性検証を実行</button>
+        <button onclick="getCitation('{{ work.id }}')" class="btn btn-secondary">📝 本文中引用を取得</button>
+    </div>
+    
+    <div id="verification-result" style="margin-top: 15px;"></div>
+    <div id="citation-result" style="margin-top: 15px;"></div>
+</div>
+
+{% if checks %}
+<div class="card">
+    <h2>✅ 実在性検証結果</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>種類</th>
+                <th>ステータス</th>
+                <th>詳細</th>
+                <th>HTTPコード</th>
+                <th>確認日時</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for check in checks %}
+            <tr>
+                <td>{{ check.kind }}</td>
+                <td class="status-{{ check.status }}">{{ check.status }}</td>
+                <td>{{ check.detail }}</td>
+                <td>{{ check.http_code or '-' }}</td>
+                <td>{{ check.checked_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if reading_score %}
+<div class="card">
+    <h2>📖 既読証跡スコア</h2>
+    <div style="font-size: 48px; font-weight: bold; color: {% if reading_score.passed %}#27ae60{% else %}#f39c12{% endif %};">
+        {{ reading_score.score }}/100
+    </div>
+    <p><strong>{{ '✅ PASS' if reading_score.passed else '⚠️ 要追加作業' }}</strong></p>
+    <pre style="white-space: pre-wrap; background: #f8f9fa; padding: 15px; border-radius: 5px;">{{ reading_score.details }}</pre>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>💡 引用文脈カード</h2>
+    
+    {% if cards %}
+    {% for card in cards %}
+    <div style="border-left: 4px solid #3498db; padding-left: 15px; margin-bottom: 20px;">
+        <p><strong>主張:</strong> {{ card.claim }}</p>
+        <p><strong>証拠:</strong> {{ card.evidence_snippet }}</p>
+        <p><strong>ページ:</strong> {{ card.page_from }}{% if card.page_to != card.page_from %}-{{ card.page_to }}{% endif %}</p>
+        {% if card.limitations %}
+        <p><strong>限界:</strong> {{ card.limitations }}</p>
+        {% endif %}
+        <p>
+            {% if card.verified %}
+            <span class="badge badge-peer-reviewed">✓ 検証済み</span>
+            {% else %}
+            <span class="badge badge-not-peer-reviewed">未検証</span>
+            {% endif %}
+        </p>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="alert alert-info">まだカードが作成されていません。</p>
+    {% endif %}
+    
+    <h3>新しいカードを作成</h3>
+    <form action="/works/{{ work.id }}/cards" method="post" onsubmit="return handleCardCreate(event)">
+        <label for="claim">主張（あなたが使う要点）:</label>
+        <textarea name="claim" id="claim" required></textarea>
+        
+        <label for="evidence_snippet">証拠（本文からの引用、30-120文字）:</label>
+        <textarea name="evidence_snippet" id="evidence_snippet" required></textarea>
+        
+        <label for="page_from">ページ（開始）:</label>
+        <input type="number" name="page_from" id="page_from" required>
+        
+        <label for="page_to">ページ（終了、オプション）:</label>
+        <input type="number" name="page_to" id="page_to">
+        
+        <label for="limitations">限界・注意点:</label>
+        <textarea name="limitations" id="limitations"></textarea>
+        
+        <button type="submit" class="btn">カードを作成</button>
+    </form>
+    
+    <div id="card-result" style="margin-top: 15px;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function verifyWork(workId) {
+    const resultDiv = document.getElementById('verification-result');
+    resultDiv.innerHTML = '<p class="alert alert-info">検証中...</p>';
+    
+    try {
+        const response = await fetch(`/works/${workId}/verify`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            let html = '<div class="alert alert-success">✅ 検証完了</div>';
+            html += '<ul>';
+            for (const [kind, data] of Object.entries(result.results)) {
+                html += `<li><strong>${kind}:</strong> ${data.status} - ${data.detail}</li>`;
+            }
+            html += '</ul>';
+            resultDiv.innerHTML = html;
+            
+            // ページをリロード
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー: ${result.detail}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー: ${error.message}</div>`;
+    }
+}
+
+async function getCitation(workId) {
+    const style = prompt('引用スタイルを選択 (apa/ieee):', 'apa');
+    if (!style) return;
+    
+    const resultDiv = document.getElementById('citation-result');
+    
+    try {
+        const response = await fetch(`/api/works/${workId}/cite?style=${style}`);
+        const result = await response.json();
+        
+        if (response.ok) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <strong>本文中引用 (${result.style}):</strong><br>
+                    <code style="background: #f8f9fa; padding: 5px 10px; border-radius: 3px; display: inline-block; margin-top: 5px;">${result.citation}</code>
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー: ${error.message}</div>`;
+    }
+}
+
+async function handleCardCreate(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    const resultDiv = document.getElementById('card-result');
+    
+    resultDiv.innerHTML = '<p class="alert alert-info">作成中...</p>';
+    
+    try {
+        const response = await fetch(form.action, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    ✅ カードを作成しました。
+                    ${result.is_complete ? '(完成)' : '(未完成: 追加情報が必要)'}
+                </div>
+            `;
+            
+            form.reset();
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="alert alert-danger">❌ エラー: ${error.message}</div>`;
+    }
+    
+    return false;
+}
+</script>
+{% endblock %}
