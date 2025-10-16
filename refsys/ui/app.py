@@ -18,7 +18,7 @@ from refsys.verify import verify_work, Verifier
 from refsys.position import PositionAnalyzer, format_position_summary
 from refsys.format import ReferenceFormatter, InTextCitation, export_to_bibtex
 from refsys.db.dao import WorkDAO, CheckDAO, ClaimCardDAO, ReadEvidenceDAO
-from refsys.db.init_db import initialize_database
+from refsys.db import init_database_async
 from refsys.readcheck import ClaimCard, ReadingScorer, ReadingEvidence
 
 app = FastAPI(
@@ -31,7 +31,7 @@ app = FastAPI(
 async def startup_event():
     """アプリケーション起動時にデータベースを初期化"""
     print("🔧 データベースを初期化中...")
-    await initialize_database()
+    await init_database_async()
     print("✅ データベース初期化完了!")
 
 # CORS設定（Next.jsフロントエンドからのアクセスを許可）
