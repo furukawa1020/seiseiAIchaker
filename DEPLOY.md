@@ -28,11 +28,12 @@ git push origin main
 2. **GitHubでサインイン**
 3. **"Import Project"** をクリック
 4. **リポジトリを選択**: `seiseiAIchaker`
-5. **設定**:
-   - Framework Preset: `Next.js`
-   - Root Directory: `frontend`
-   - Build Command: `npm run build`
-   - Output Directory: `.next`
+5. **重要な設定**:
+   - Framework Preset: `Next.js` (自動検出)
+   - **Root Directory**: `frontend` ← **必ず設定してください！**
+   - Build Command: `npm run build` (デフォルト)
+   - Output Directory: `.next` (デフォルト)
+   - Node.js Version: `18.x` (推奨)
 6. **環境変数を追加**:
    ```
    NEXT_PUBLIC_API_URL=https://あなたのバックエンドURL.up.railway.app
