@@ -26,20 +26,23 @@ git push origin main
 ### 手順:
 1. **Vercelにアクセス**: https://vercel.com
 2. **GitHubでサインイン**
-3. **"Import Project"** をクリック
+3. **"Import Project"** または既存プロジェクトの **Settings**
 4. **リポジトリを選択**: `seiseiAIchaker`
-5. **重要な設定**:
-   - Framework Preset: `Next.js` (自動検出)
-   - **Root Directory**: `frontend` ← **必ず設定してください！**
-   - Build Command: `npm run build` (デフォルト)
-   - Output Directory: `.next` (デフォルト)
+5. **必須設定（Settings → General）**:
+   - Framework Preset: `Next.js`
+   - **Root Directory**: `frontend` ← **これが最重要！**
+   - Build Command: 空白（デフォルトを使用）
+   - Output Directory: 空白（デフォルトを使用）
+   - Install Command: 空白（デフォルトを使用）
    - Node.js Version: `18.x` (推奨)
-6. **環境変数を追加**:
+6. **環境変数を追加（Settings → Environment Variables）**:
    ```
    NEXT_PUBLIC_API_URL=https://あなたのバックエンドURL.up.railway.app
    ```
-   ※バックエンドデプロイ後に更新
-7. **Deploy** をクリック
+   ※まずは空白でもOK、バックエンドデプロイ後に追加
+7. **Save** して **Deployments** → **Redeploy**
+
+**重要:** Root Directoryは必ず `frontend` に設定してください。空白だとエラーになります。
 
 ### デプロイ後:
 - 自動で `https://あなたのプロジェクト名.vercel.app` にデプロイされます
