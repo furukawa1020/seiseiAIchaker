@@ -33,6 +33,7 @@ app.add_middleware(
         "http://localhost:3000",  # Next.js開発サーバー
         "http://127.0.0.1:3000",
         "http://localhost:8000",  # FastAPI自身
+        "https://seisei-a-ichaker.vercel.app",  # Vercel本番環境
     ],
     allow_credentials=True,
     allow_methods=["*"],  # GET, POST, PUT, DELETE等すべて許可
